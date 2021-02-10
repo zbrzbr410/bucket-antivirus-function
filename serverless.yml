@@ -1,0 +1,86 @@
+service: ${self:custom.project}
+
+custom:
+  env: ${opt:stage, "dev"}
+  project: s3-antivirus
+  aws:
+    region: ap-northeast-1
+    s3:
+      program: ${self:custom.project}-${self:custom.env}
+      test: ${self:custom.project}-test-${self:custom.env}
+
+  prune:
+    automatic: true
+    number: 2
+
+plugins:
+  - serverless-prune-plugin
+
+package:
+  artifact: build/lambda.zip
+
+provider:
+  name: aws
+  runtime: python3.7
+  logRetentionInDays: 7
+  deploymentBucket:
+    name: ga-common-${self:custom.env}-serverless
+  stage: ${self:custom.env}
+  region: ${self:custom.aws.region}
+    
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - logs:*
+      Resource:
+        - "*"
+    - Effect: "Allow"
+      Action:
+        - "s3:*"
+      Resource:
+        - "arn:aws:s3:::${self:custom.aws.s3.program}"
+        - "arn:aws:s3:::${self:custom.aws.s3.program}/*"
+        - "arn:aws:s3:::${self:custom.aws.s3.test}"
+        - "arn:aws:s3:::${self:custom.aws.s3.test}/*"
+  tags:
+    project: ${self:custom.project}
+    env: ${self:custom.env}
+
+  environment:
+    AV_DEFINITION_S3_BUCKET: ${self:custom.aws.s3.program}
+    ENV: ${self:custom.env}
+    PROJECT: ${self:custom.project}
+
+resources:
+  Resources:
+    program:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.aws.s3.program}
+    test:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.aws.s3.test}
+
+functions:
+  antivirus:
+    handler: scan.lambda_handler
+    description: clamav scanner
+    memorySize: 1024
+    timeout: 600
+    events:
+      - s3:
+          bucket: ${self:custom.aws.s3.test}
+          event: s3:ObjectCreated:*
+          existing: true
+
+  updater:
+    handler: update.lambda_handler
+    description: update clamav data
+    memorySize: 1024
+    timeout: 600
+    events:
+      - schedule:
+          enabled: true
+          # 3時間毎
+          rate: rate(3 hours)

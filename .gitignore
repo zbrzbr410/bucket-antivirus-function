@@ -117,3 +117,7 @@ tmp/
 
 # EICAR Files
 *eicar*
+
+.serverless
+node_modules
+yarn.lock
